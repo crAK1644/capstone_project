@@ -1,14 +1,30 @@
 [project]
 name = "capstone-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "SSFL: Semisupervised Federated Learning for IoT Intrusion Detection"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "flwr>=1.22.0",
+    "flwr[simulation]>=1.22.0",
     "numpy>=2.4.2",
     "pandas>=3.0.1",
     "pdfplumber>=0.11.9",
     "ray>=2.49.2",
+    "scikit-learn>=1.6.0",
     "torch>=2.10.0",
 ]
+
+[tool.flwr.app]
+publisher = "capstone-team"
+
+[tool.flwr.app.components]
+serverapp = "src.server_app:app"
+clientapp = "src.client_app:app"
+
+[tool.flwr.app.config]
+scenario = 1
+num-rounds = 200
+learning-rate = 0.0001
+batch-size = 100
+local-epochs = 5
+seed = 42
