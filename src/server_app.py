@@ -16,6 +16,7 @@ global labels (Eq. 10) and used for centralised evaluation on the test set.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Union
 
 import numpy as np
@@ -107,7 +108,13 @@ class SSFLStrategy(Strategy):
         # Metrics history for plotting
         self.history: list[dict[str, float]] = []
 
-        log.info(
+        # Progress tracking
+        self._start_time: float | None = None
+        self._best_accuracy: float = 0.0
+        self._best_f1: float = 0.0
+        self._best_round: int = 0
+
+        log.debug(
             "SSFLStrategy initialised: scenario=%d, open_samples=%d, classes=%d",
             scenario,
             self.num_open_samples,
@@ -188,6 +195,10 @@ class SSFLStrategy(Strategy):
         If no client provides a valid prediction for a sample, the global
         label defaults to -1 (will be skipped in distillation).
         """
+        # Start timer on first round
+        if self._start_time is None:
+            self._start_time = time.time()
+
         if not results:
             log.warning("Round %d: no results received!", server_round)
             return None, {}
@@ -234,19 +245,19 @@ class SSFLStrategy(Strategy):
         avg_metrics["num_labelled_open"] = float(num_labelled)
         avg_metrics["num_unlabelled_open"] = float(num_unlabelled)
 
-        log.info(
-            "Round %d: voting complete — %d/%d open samples labelled",
-            server_round,
-            num_labelled,
-            self.num_open_samples,
-        )
-
         # --- Evaluate server's global model on test set ---
         eval_metrics = self._evaluate_global_model(server_round)
         avg_metrics.update(eval_metrics)
 
         # Store history for plotting
         self.history.append({"round": server_round, **avg_metrics})
+
+        # --- Print progress ---
+        self._print_round_progress(server_round, avg_metrics, len(results))
+
+        # Print final summary on last round
+        if server_round == self.num_rounds:
+            self._print_final_summary()
 
         # Return None for parameters (no model weights to aggregate)
         return None, avg_metrics
@@ -269,7 +280,7 @@ class SSFLStrategy(Strategy):
             )
             metrics = compute_metrics(y_true, y_pred, self.num_classes)
 
-            log.info(
+            log.debug(
                 "Round %d eval — Accuracy: %.4f, F1: %.4f, Loss: %.4f",
                 server_round,
                 metrics["accuracy"],
@@ -287,6 +298,115 @@ class SSFLStrategy(Strategy):
         except Exception as e:
             log.error("Evaluation failed: %s", e)
             return {}
+
+    # ─── Progress display ──────────────────────────────────────
+
+    def _print_round_progress(
+        self,
+        server_round: int,
+        metrics: dict[str, float],
+        num_clients: int,
+    ) -> None:
+        """Print a formatted progress line after each round."""
+        elapsed = time.time() - (self._start_time or time.time())
+        pct = server_round / self.num_rounds * 100
+
+        # Progress bar (30 chars wide)
+        filled = int(30 * server_round / self.num_rounds)
+        bar = "█" * filled + "░" * (30 - filled)
+
+        # Extract key metrics (with fallbacks)
+        acc = metrics.get("test_accuracy", 0.0)
+        f1 = metrics.get("test_f1", 0.0)
+        cls_loss = metrics.get("avg_classifier_loss", 0.0)
+        dist_loss = metrics.get("avg_distillation_loss", 0.0)
+        labelled = int(metrics.get("num_labelled_open", 0))
+
+        # Track best
+        if acc > self._best_accuracy:
+            self._best_accuracy = acc
+            self._best_f1 = f1
+            self._best_round = server_round
+
+        # Format elapsed time
+        mins, secs = divmod(int(elapsed), 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs > 0:
+            time_str = f"{hrs}h{mins:02d}m{secs:02d}s"
+        elif mins > 0:
+            time_str = f"{mins}m{secs:02d}s"
+        else:
+            time_str = f"{secs}s"
+
+        # ETA
+        if server_round > 0:
+            per_round = elapsed / server_round
+            remaining = per_round * (self.num_rounds - server_round)
+            eta_mins, eta_secs = divmod(int(remaining), 60)
+            eta_hrs, eta_mins = divmod(eta_mins, 60)
+            if eta_hrs > 0:
+                eta_str = f"{eta_hrs}h{eta_mins:02d}m"
+            elif eta_mins > 0:
+                eta_str = f"{eta_mins}m{eta_secs:02d}s"
+            else:
+                eta_str = f"{eta_secs}s"
+        else:
+            eta_str = "--"
+
+        # ── Print the progress line ──
+        print(
+            f"\n{'─' * 72}\n"
+            f"  Round {server_round}/{self.num_rounds}  "
+            f"|{bar}|  {pct:5.1f}%\n"
+            f"{'─' * 72}\n"
+            f"  Clients:   {num_clients}    "
+            f"Labelled:  {labelled}/{self.num_open_samples}\n"
+            f"  Accuracy:  {acc:.4f}        "
+            f"F1 Score:  {f1:.4f}\n"
+            f"  Cls Loss:  {cls_loss:.4f}        "
+            f"Dist Loss: {dist_loss:.4f}\n"
+            f"  Elapsed:   {time_str}          "
+            f"ETA:       {eta_str}\n"
+            f"  Best:      {self._best_accuracy:.4f} acc  "
+            f"@ round {self._best_round}\n"
+            f"{'─' * 72}",
+            flush=True,
+        )
+
+    def _print_final_summary(self) -> None:
+        """Print a summary table after all rounds complete."""
+        elapsed = time.time() - (self._start_time or time.time())
+        mins, secs = divmod(int(elapsed), 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs > 0:
+            time_str = f"{hrs}h {mins:02d}m {secs:02d}s"
+        elif mins > 0:
+            time_str = f"{mins}m {secs:02d}s"
+        else:
+            time_str = f"{secs}s"
+
+        print(
+            f"\n{'═' * 72}\n"
+            f"  ✅  SSFL SIMULATION COMPLETE\n"
+            f"{'═' * 72}\n"
+            f"  Scenario:     {self.scenario}\n"
+            f"  Total rounds: {self.num_rounds}\n"
+            f"  Total time:   {time_str}\n"
+            f"{'─' * 72}\n"
+            f"  BEST RESULTS (round {self._best_round}):\n"
+            f"    Accuracy:   {self._best_accuracy:.4f}\n"
+            f"    F1 Score:   {self._best_f1:.4f}\n"
+            f"{'─' * 72}\n"
+            f"  LAST ROUND METRICS:",
+            flush=True,
+        )
+        if self.history:
+            last = self.history[-1]
+            for key, value in sorted(last.items()):
+                if key == "round":
+                    continue
+                print(f"    {key:30s}  {value:.4f}", flush=True)
+        print(f"{'═' * 72}\n", flush=True)
 
     # ─── Unused methods (required by Strategy interface) ───────
 
@@ -312,15 +432,16 @@ def server_fn(context: flwr.common.Context) -> ServerAppComponents:
     """
     Factory function that creates the ServerApp components.
 
-    Reads configuration from ``context.run_config``.
+    Reads configuration from the shared ``RUNTIME_CONFIG`` dict
+    (set by ``run_simulation.py`` before the simulation starts).
     """
-    run_config = context.run_config
+    from .config import RUNTIME_CONFIG as cfg
 
-    num_rounds = int(run_config.get("num-rounds", 200))
-    scenario = int(run_config.get("scenario", 1))
-    lr = float(run_config.get("learning-rate", 0.0001))
-    seed = int(run_config.get("seed", 42))
-    fraction_fit = float(run_config.get("fraction-fit", 1.0))
+    num_rounds = int(cfg.get("num-rounds", 200))
+    scenario = int(cfg.get("scenario", 1))
+    lr = float(cfg.get("learning-rate", 0.0001))
+    seed = int(cfg.get("seed", 42))
+    fraction_fit = float(cfg.get("fraction-fit", 1.0))
 
     num_clients = get_num_clients(scenario)
 
@@ -341,3 +462,4 @@ def server_fn(context: flwr.common.Context) -> ServerAppComponents:
 
 # Flower ServerApp instance
 app = ServerApp(server_fn=server_fn)
+

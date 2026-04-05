@@ -38,6 +38,7 @@ from .train import (
     distillation_train,
     filter_and_predict,
     train_classifier,
+    train_discriminator,
 )
 from .utils import get_device, labels_to_bytes, set_seed
 
@@ -93,7 +94,7 @@ class SSFLClient(NumPyClient):
         self.X_private, _ = load_client_data_tensors(scenario, client_id)
         self.X_open, _ = load_open_data_tensors(use_2d=True)
 
-        log.info(
+        log.debug(
             "Client %d initialised: %d private samples, %d open samples",
             client_id,
             len(self.X_private),
@@ -131,7 +132,7 @@ class SSFLClient(NumPyClient):
         if len(parameters) > 0 and len(parameters[0]) > 0:
             global_labels = parameters[0].astype(np.int16)
             if len(global_labels) == len(self.X_open):
-                log.info(
+                log.debug(
                     "Client %d, round %d: distillation training",
                     self.client_id,
                     server_round,
@@ -157,7 +158,7 @@ class SSFLClient(NumPyClient):
             dist_loss = 0.0
 
         # ── Step 1: Train classifier on private data ──
-        log.info(
+        log.debug(
             "Client %d, round %d: training classifier",
             self.client_id,
             server_round,
@@ -215,7 +216,7 @@ class SSFLClient(NumPyClient):
             "num_unfamiliar": int(len(hard_labels) - num_familiar),
         }
 
-        log.info(
+        log.debug(
             "Client %d, round %d: %d familiar / %d unfamiliar",
             self.client_id,
             server_round,
@@ -244,20 +245,18 @@ def client_fn(context: Context) -> SSFLClient:
     """
     Factory function that creates an SSFLClient for Flower simulation.
 
-    The ``node_config`` must contain:
-    - ``partition-id``: the client index
-    - ``scenario``: which non-IID scenario to use (1, 2, or 3)
-
-    Additional training hyperparameters can also be passed via ``run_config``.
+    The ``node_config`` provides the ``partition-id`` (client index).
+    Training hyperparameters come from the shared ``RUNTIME_CONFIG`` dict.
     """
-    client_id = int(context.node_config["partition-id"])
-    run_config = context.run_config
+    from .config import RUNTIME_CONFIG as cfg
 
-    scenario = int(run_config.get("scenario", 1))
-    lr = float(run_config.get("learning-rate", 0.0001))
-    local_epochs = int(run_config.get("local-epochs", 5))
-    batch_size = int(run_config.get("batch-size", 100))
-    seed = int(run_config.get("seed", 42))
+    client_id = int(context.node_config["partition-id"])
+
+    scenario = int(cfg.get("scenario", 1))
+    lr = float(cfg.get("learning-rate", 0.0001))
+    local_epochs = int(cfg.get("local-epochs", 5))
+    batch_size = int(cfg.get("batch-size", 100))
+    seed = int(cfg.get("seed", 42))
 
     return SSFLClient(
         client_id=client_id,
