@@ -1,0 +1,24 @@
+# ─── SSFL Hyperparameters (from paper Section V-C) ───
+
+model:
+  num_classes: 11                   # Traffic categories (Table: benign + 10 attacks)
+  num_discriminator_classes: 2      # Familiar / unfamiliar
+
+training:
+  learning_rate: 0.0001             # Adam optimizer lr (paper Section V-C)
+  batch_size: 100                   # Batch size (paper Section V-C)
+  local_epochs: 5                   # Classifier training epochs per round
+  discriminator_epochs: 5           # Discriminator training epochs
+  distillation_epochs: 5            # Distillation epochs per round
+
+federation:
+  num_rounds: 200                   # Communication rounds T
+  scenario: 1                       # Non-IID data split (1, 2, or 3)
+  fraction_fit: 1.0                 # Fraction of clients per round (1.0 = all clients)
+
+# Scenario summary:
+#   Scenario 1 → 27 clients, shard-based, K=3 per device
+#   Scenario 2 → 89 clients, shard-based, K=L per device
+#   Scenario 3 → 89 clients, Dirichlet(α=0.1), K=L per device
+
+seed: 42
