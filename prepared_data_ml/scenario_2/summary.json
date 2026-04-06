@@ -1,0 +1,803 @@
+[
+  {
+    "client_id": 0,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 1,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 2,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 3,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 4,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 5,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 6,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 7,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 8,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 9,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 10,
+    "device_id": 1,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  },
+  {
+    "client_id": 11,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 12,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 13,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 14,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 15,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 16,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 17,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 18,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 19,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 20,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 21,
+    "device_id": 2,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  },
+  {
+    "client_id": 22,
+    "device_id": 3,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      3
+    ]
+  },
+  {
+    "client_id": 23,
+    "device_id": 3,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      3
+    ]
+  },
+  {
+    "client_id": 24,
+    "device_id": 3,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      4
+    ]
+  },
+  {
+    "client_id": 25,
+    "device_id": 3,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      4
+    ]
+  },
+  {
+    "client_id": 26,
+    "device_id": 3,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      5
+    ]
+  },
+  {
+    "client_id": 27,
+    "device_id": 3,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      5
+    ]
+  },
+  {
+    "client_id": 28,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 29,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 30,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 31,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 32,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 33,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 34,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 35,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 36,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 37,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 38,
+    "device_id": 4,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  },
+  {
+    "client_id": 39,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 40,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 41,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 42,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 43,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 44,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 45,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 46,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 47,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 48,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 49,
+    "device_id": 5,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  },
+  {
+    "client_id": 50,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 51,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 52,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 53,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 54,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 55,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 56,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 57,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 58,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 59,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 60,
+    "device_id": 6,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  },
+  {
+    "client_id": 61,
+    "device_id": 7,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      3
+    ]
+  },
+  {
+    "client_id": 62,
+    "device_id": 7,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      3
+    ]
+  },
+  {
+    "client_id": 63,
+    "device_id": 7,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      4
+    ]
+  },
+  {
+    "client_id": 64,
+    "device_id": 7,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      4
+    ]
+  },
+  {
+    "client_id": 65,
+    "device_id": 7,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      5
+    ]
+  },
+  {
+    "client_id": 66,
+    "device_id": 7,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      5
+    ]
+  },
+  {
+    "client_id": 67,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 68,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 69,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 70,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 71,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 72,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 73,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 74,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 75,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 76,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 77,
+    "device_id": 8,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  },
+  {
+    "client_id": 78,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      5
+    ]
+  },
+  {
+    "client_id": 79,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      0,
+      6
+    ]
+  },
+  {
+    "client_id": 80,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      6
+    ]
+  },
+  {
+    "client_id": 81,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      1,
+      7
+    ]
+  },
+  {
+    "client_id": 82,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      7
+    ]
+  },
+  {
+    "client_id": 83,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      2,
+      8
+    ]
+  },
+  {
+    "client_id": 84,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      8
+    ]
+  },
+  {
+    "client_id": 85,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      3,
+      9
+    ]
+  },
+  {
+    "client_id": 86,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      9
+    ]
+  },
+  {
+    "client_id": 87,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      4,
+      10
+    ]
+  },
+  {
+    "client_id": 88,
+    "device_id": 9,
+    "num_samples": 700,
+    "labels_present": [
+      5,
+      10
+    ]
+  }
+]

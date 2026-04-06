@@ -1,0 +1,13 @@
+{
+  "benign": 0,
+  "gafgyt.combo": 1,
+  "gafgyt.junk": 2,
+  "gafgyt.scan": 3,
+  "gafgyt.tcp": 4,
+  "gafgyt.udp": 5,
+  "mirai.ack": 6,
+  "mirai.scan": 7,
+  "mirai.syn": 8,
+  "mirai.udp": 9,
+  "mirai.udpplain": 10
+}
