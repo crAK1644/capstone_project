@@ -1092,6 +1092,10 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 - `args.data_dir: str` — Raw data directory (used during data preparation only).
 - `args.device: str` — `'cuda'` or `'cpu'`. Default `'cpu'`.
 - `args.seed: int` — Random seed for reproducibility. Default `42`.
+- `args.metrics_dir: str` — (Server mode) Directory for `per_round.{json,csv}`, `summary.json`, `confusion_matrix_final.json`. Default `config.METRICS_DIR == "metrics"`.
+- `args.logs_dir: str` — (Server mode) Directory for the Flower `history.json`. Default `config.LOGS_DIR == "logs"`.
+- `args.target_accs: str` — (Server mode) Comma-separated target accuracies for C@x (default `"0.50,0.75"`). Parsed into a `Tuple[float, ...]` in `run_server`.
+- `args.snapshot_rounds: str` — (Server mode) Comma-separated rounds at which Top-1 accuracy is snapshotted for Table III (default `"10,50,100,150,200"`). Parsed into a `Tuple[int, ...]`.
 
 **Internal Variables:**
 - `parser: argparse.ArgumentParser` — The argument parser object.
@@ -1114,7 +1118,7 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 
 ### 9.3 `run_server(args: argparse.Namespace) -> None`
 
-**Purpose:** Constructs all server-side objects and starts the Flower server. Loads the test dataset, builds the evaluation function, creates the strategy, and calls `start_server()`.
+**Purpose:** Constructs all server-side objects, starts the Flower server, and **on shutdown** persists the full metrics bundle (§14.5) so downstream plotting / report-writing never touches live training code.
 
 **Parameters:**
 - `args: argparse.Namespace` — Parsed command-line arguments.
@@ -1123,13 +1127,19 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 
 **Internal Variables:**
 - `device: torch.device` — Resolved from `args.device`.
-- `test_df: pd.DataFrame` — Loaded from `args.partition_dir/test_data.pkl`.
-- `open_df: pd.DataFrame` — Loaded from `args.partition_dir/open_data.pkl` (used to know `n_open_samples`).
-- `X_test, y_test: np.ndarray` — Extracted and reshaped from `test_df`.
-- `n_open_samples: int` — `len(open_df)`. Needed by the strategy to size the global labels array.
+- `X_test, y_test: np.ndarray` — Loaded from `args.partition_dir` via `load_test_data`.
+- `X_open: np.ndarray` — Loaded via `load_open_data`; only `X_open.shape[0]` is consumed here (server doesn't hold the data in memory).
+- `n_open_samples: int` — `int(X_open.shape[0])`. Sizes the global labels array.
+- `target_accs: Tuple[float, ...]`, `snapshot_rounds: Tuple[int, ...]` — Parsed from `args.target_accs` / `args.snapshot_rounds` via `_parse_float_tuple` / `_parse_int_tuple`.
 - `eval_fn: Callable` — Created by `build_eval_fn(X_test, y_test, args.num_classes, device)`.
-- `strategy: SSFLStrategy` — Constructed with all required arguments.
-- `history: flwr.server.History` — Returned by `start_server()`. Saved to disk as JSON for later plotting.
+- `strategy: SSFLStrategy` — Constructed with `eval_fn`, `classifier_epochs`, and the default `charge_open_dataset_round=1`.
+- `history: flwr.server.History` — Returned by `start_server()`. Written as JSON to `{args.logs_dir}/history.json` alongside a copy of `strategy.round_metrics`.
+
+**§14.5 shutdown artefacts written under `args.metrics_dir`:**
+- `per_round.json` — `metrics.save_metrics_json(strategy.round_metrics, ...)`. Keeps every list-valued and per-class field so the confusion matrix per round is preserved.
+- `per_round.csv` — `metrics.save_metrics_csv(...)`. Scalar-only, one row per round. Ideal for quick pandas plotting.
+- `summary.json` — `metrics.build_summary_report(strategy.round_metrics, strategy.comm_cost_ledger, target_accs, snapshot_rounds)` + the full `comm_cost_ledger.to_dict()` blob appended as `"comm_cost_ledger"`. Contains `top_acc`, `top_acc_round`, `c_at_top_acc_wire_mb`, `c_at_top_acc_packed_mb`, `c_at_open_dataset_bytes/mb`, `accuracy_snapshots`, `c_at_accuracy_wire_mb`, `c_at_accuracy_packed_mb`, `final_round_cumulative_{wire,packed}_mb`.
+- `confusion_matrix_final.json` — Extracted from the last `server_eval_confusion_matrix` entry in `round_metrics` + the matching per-class lists and `class_names`. Skipped (with log note) if `eval_fn` was stubbed for the whole run.
 
 ---
 
@@ -1310,8 +1320,11 @@ This section summarizes all major data structures that flow through the system.
 | `voting_sets` | `np.ndarray` | `(N_open, num_classes)` int | `strategy.vote_mechanism()` | Vote accumulator per sample per class |
 | `global_labels` | `np.ndarray` | `(N_open,)` int64, values -1 to 10 | `strategy.vote_mechanism()` | Voted global labels broadcast to all clients |
 | `self.global_labels` | `np.ndarray` | `(N_open,)` int64 | `client.set_parameters()` | Client's stored copy of global labels |
-| `round_metrics` | `List[dict]` | List grows each round | `strategy.aggregate_fit()` | Per-round metrics log |
+| `round_metrics` | `List[dict]` | List grows each round | `strategy.aggregate_fit()` | Per-round metrics log (§14 schema) |
 | `all_partitions` | `Dict[int, pd.DataFrame]` | 27 entries | `data_preparation.build_all_client_partitions()` | Maps client ID to its data |
+| `RoundCommCost` | `dataclass` | One record per round | `strategy.aggregate_fit()` (via `metrics.py`) | Upload / broadcast / open-dataset bytes in both wire and packed accounting; `total_wire` / `total_packed` properties |
+| `CommCostLedger` | `class` | `List[RoundCommCost]` + helpers | `strategy.__init__` | Running byte total; exposes `cumulative_mb_at(round, packed=bool)` and `cumulative_series(packed=bool)` for the C@x column of Table IV |
+| `summary_report` | `dict` | 1 record per run | `metrics.build_summary_report()` | Flat schema of every Table II-IV cell; written to `metrics/summary.json` at shutdown |
 
 ---
 
@@ -1364,7 +1377,12 @@ This cycle repeats for T rounds (T ≈ 150 for convergence as observed in the pa
 | Discriminator training loss | float | scalar | `FitRes.metrics['discriminator_loss']` |
 | Distillation training loss | float | scalar | `FitRes.metrics['distillation_loss']` |
 | Number of familiar samples | int | scalar | `FitRes.metrics['n_familiar']` |
+| Number of unfamiliar samples | int | scalar | `FitRes.metrics['n_unfamiliar']` |
 | Client ID | int | scalar | `FitRes.metrics['client_id']` |
+| Upload bytes (wire) | int | scalar | `FitRes.metrics['bytes_upload_wire']` — `hard_labels.nbytes` (§14.2) |
+| Upload bytes (packed) | int | scalar | `FitRes.metrics['bytes_upload_packed']` — `N_open × 1 byte` (§14.2) |
+| Adaptive confidence θ | float | scalar | `FitRes.metrics['confidence_threshold']` (§14 diagnostic) |
+| Client fit wall-clock | float | scalar (sec) | `FitRes.metrics['fit_wall_clock_sec']` (§14 diagnostic) |
 
 ### What Travels Over the Wire (Server → Client)
 
@@ -1379,6 +1397,139 @@ This cycle repeats for T rounds (T ≈ 150 for convergence as observed in the pa
 - **Model weights NEVER leave the client.** The classifier and discriminator parameters are never put into `get_parameters()`.
 - **Raw private data NEVER leaves the client.** Only the predicted label (a single integer per open sample) is shared.
 - **Only hard labels are shared.** A hard label is a class index integer — it carries far less information than a soft label vector or gradient vector.
+
+---
+
+## 14. Metrics & Evaluation Protocol
+
+**Purpose:** This section is the contract for every number that will appear in our capstone report. It guarantees that our reproduction of Zhao et al. (IEEE IoT Journal, 2023) publishes the *same tables* (Table II classification breakdown, Table III Top-1 accuracy across rounds, Table IV communication overhead), *plus* diagnostic metrics we found useful but the paper omits (wall-clock, per-class F1, per-round byte breakdown).
+
+All math lives in `metrics.py`. `utils.py` keeps a backward-compatible facade (§10.1). Side-effect-free + CNN-independent modules are marked **live**; anything labelled **stubbed** raises `NotImplementedError` until `model.py` ships but has a finalized signature.
+
+---
+
+### 14.1 Classification metrics — Table II analogue (**live**)
+
+**Function:** `metrics.compute_classification_metrics(y_true, y_pred, num_classes, class_names=None) -> dict`
+
+**Inputs:** Two 1-D int arrays `y_true`, `y_pred` of equal length, plus `num_classes` (11 for N-BaIoT Mini) and an optional `class_names` override — if omitted, the mapping comes from `config.GLOBAL_ID_TO_CLASS_NAME`.
+
+**Returns (flat dict with per-class lists and 2-D confusion matrix):**
+
+| Key | Type | Meaning |
+|---|---|---|
+| `accuracy` | float | Overall top-1 accuracy |
+| `f1_macro` / `f1_weighted` | float | Macro and support-weighted F1 (paper reports macro; weighted is our addition to catch class-imbalance artefacts) |
+| `precision_macro` / `precision_weighted` | float | Macro + weighted precision |
+| `recall_macro` / `recall_weighted` | float | Macro + weighted recall |
+| `f1_per_class` | `List[float]` | Length `num_classes`; drives the per-class bar chart in our final report |
+| `precision_per_class` / `recall_per_class` / `support_per_class` | List | Length `num_classes`; support is `int` |
+| `confusion_matrix` | `List[List[int]]` | Shape `num_classes × num_classes`; backs Fig. 3 heatmap |
+| `class_names` | `List[str]` | Human-readable labels aligned with `GLOBAL_ID_TO_CLASS_NAME` |
+
+**Rationale:** Zhao et al. report only `(accuracy, precision, recall, F1)`. We return the per-class breakdown as well because (a) the paper's "minor classes" (e.g., `gafgyt_junk`) are likely where SSFL underperforms FL, and (b) per-class F1 is necessary to defend the "no class is starved" claim in §VI of our capstone report.
+
+---
+
+### 14.2 Payload sizing — Table IV raw counts (**live**)
+
+Two byte models are maintained in parallel, because the paper's accounting and our real Flower implementation disagree — both are valid numbers to cite, and we let the final report pick:
+
+| Helper | Formula | Used for |
+|---|---|---|
+| `payload_bytes_wire(arr)` | `arr.nbytes` (int64 ⇒ 8 B / label) | Real on-the-wire gRPC cost — reflects what actually leaves the socket in our pass-1 implementation |
+| `payload_bytes_packed(arr)` | `arr.size × 1` (uint8) | Paper-fair count — Zhao et al. treat a single hard label as 1 byte |
+| `open_dataset_distribution_bytes(n_open, n_features, bytes_per_value)` | `n_open × n_features × bytes_per_value` | The one-shot server→client push of `X_open` before round 1 (paper's `C@Dᵒ`) |
+| `fl_baseline_upload_bytes(num_params, bytes_per_param)` | `num_params × bytes_per_param` | Per-round, per-client parameter upload of the vanilla-FL baseline. Defaults to `ESTIMATED_CNN_PARAM_COUNT × 4`; should be recomputed from `sum(p.numel() for p in classifier.parameters())` once `model.py` ships |
+| `bytes_to_mb(n_bytes)` | `n_bytes / 1_000_000` | Decimal-MB convention used throughout Zhao et al. Table IV |
+
+**Byte-constant defaults (from `config.py` §10A):** `BYTES_PER_FLOAT32=4`, `BYTES_PER_INT64=8`, `BYTES_PER_HARD_LABEL_WIRE=8`, `BYTES_PER_HARD_LABEL_PAPER=1`, `BYTES_PER_OPEN_SAMPLE_FP32=460`, `BYTES_PER_OPEN_SAMPLE_UINT8=115`, `ESTIMATED_CNN_PARAM_COUNT=300_000`.
+
+---
+
+### 14.3 Running ledger — `RoundCommCost` & `CommCostLedger` (**live**)
+
+**`RoundCommCost` dataclass** — one row per communication round:
+
+| Field | Meaning |
+|---|---|
+| `round` | 1-indexed round number |
+| `uploaded_bytes_wire` | Sum across clients of `FitRes.metrics['bytes_upload_wire']` this round |
+| `uploaded_bytes_packed` | Sum across clients of `bytes_upload_packed` |
+| `downloaded_bytes_wire` | One global-label broadcast × `num_clients` fan-out |
+| `downloaded_bytes_packed` | Same, under the packed accounting |
+| `open_dataset_bytes` | Non-zero only at `charge_open_dataset_round` (default 1); equals `N_open × N_features × 4 × num_clients` |
+
+The `total_wire` / `total_packed` `@property` helpers sum the three byte categories so the ledger can answer cumulative-bytes questions without re-aggregating.
+
+**`CommCostLedger` class** — append-only log + cumulative query API:
+
+| Method | Returns | Used by |
+|---|---|---|
+| `record(entry)` | `None` | Called once per round from `strategy.aggregate_fit` |
+| `cumulative_bytes_at(round, packed=False)` | `int` | Internal — exact byte total up to & including `round` |
+| `cumulative_mb_at(round, packed=False)` | `float` | Per-round `cumulative_mb_{wire,packed}` metric |
+| `cumulative_series(packed=False)` | `List[(round, MB)]` | Input to the cumulative-MB-over-rounds plot in our report |
+| `to_dict()` | `dict` | Serialised to `metrics/summary.json → comm_cost_ledger` |
+
+**Key design choice — `×num_clients` fan-out on broadcast.** The paper counts broadcasts against every receiver; we match that convention so our `C@50` and `C@75` numbers are apples-to-apples with Zhao et al. Table IV. A future "centralized-view" variant could count only the single outbound broadcast; the ledger is trivially re-summable because the raw bytes are stored per category.
+
+---
+
+### 14.4 Summary extractors — Table III / Table IV cells (**live**)
+
+All four extractors walk `strategy.round_metrics + strategy.comm_cost_ledger` — they never touch model state, so the tables can be regenerated from disk after a crashed run.
+
+| Function | Returns | Table cell |
+|---|---|---|
+| `extract_top_acc(history)` | `(float, Optional[int])` — `(top_acc, round_of_top_acc)` | Table IV "Top-Acc" column |
+| `extract_comm_cost_at_accuracy(history, ledger, target_acc, packed)` | `Optional[float]` MB at first round hitting `target_acc`; `None` if never reached | Table IV `C@50`, `C@75` |
+| `extract_comm_cost_at_top_acc(history, ledger, packed)` | `Optional[float]` | Table IV `C@Top-Acc` |
+| `extract_accuracy_snapshots(history, rounds)` | `Dict[int, Optional[float]]` | Table III row (`Top-1 @ {10,50,100,150,200}`) |
+| `build_summary_report(history, ledger, target_accs, snapshot_rounds)` | aggregator `dict` | Combines all of the above into one serialisable payload |
+
+**Accuracy key resolution order** (inside `_accuracy_of`): `server_eval_accuracy` → `accuracy` → `test_accuracy`. This lets pre-CNN runs emit `None` cleanly and post-CNN runs pick up the server-side evaluation automatically without the strategy having to be modified.
+
+---
+
+### 14.5 On-disk deliverables (**live**)
+
+At `strategy` shutdown, `main.run_server` writes four files under `args.metrics_dir` (default `metrics/`) plus the Flower native history under `args.logs_dir`:
+
+| File | Producer | Contents |
+|---|---|---|
+| `metrics/per_round.json` | `save_metrics_json(strategy.round_metrics, ...)` | Canonical indented-JSON dump of every round's full metric dict, including per-class lists and the round-by-round confusion matrix |
+| `metrics/per_round.csv` | `save_metrics_csv(...)` | Scalar-only flattening (one row = one round). Ideal for quick `pd.read_csv` plotting |
+| `metrics/summary.json` | `build_summary_report(...) + ledger.to_dict()` | Every Table II-IV cell — `top_acc`, `top_acc_round`, `c_at_top_acc_{wire,packed}_mb`, `c_at_open_dataset_{bytes,mb}`, `accuracy_snapshots`, `c_at_accuracy_{wire,packed}_mb`, `final_round_cumulative_{wire,packed}_mb`, and the full `comm_cost_ledger` blob |
+| `metrics/confusion_matrix_final.json` | `save_confusion_matrix_json(...)` | Final-round confusion matrix + per-class F1/P/R/support + class names; backs Fig. 3 heatmap. Skipped (with a logged note) if `eval_fn` was stubbed for the whole run |
+| `logs/history.json` | direct `json.dump` over Flower's `History` | `losses_distributed`, `metrics_distributed_fit`, `metrics_distributed`, plus a copy of `strategy.round_metrics` — kept because downstream tooling may depend on it |
+
+---
+
+### 14.6 Which metric maps to which paper cell (quick reference)
+
+| Paper target | Our source | Notes |
+|---|---|---|
+| Table II accuracy | `summary.top_acc` | `eval_fn` must be live (post-CNN) |
+| Table II F1 (macro) | `per_round.json[last].server_eval_f1_macro` | Derived from `compute_classification_metrics` |
+| Table II precision / recall | `per_round.json[last].server_eval_{precision,recall}_macro` | Weighted variants also present |
+| Table III Top-1 @ {10,50,100,150,200} | `summary.accuracy_snapshots` | Missing rounds → `None` |
+| Table IV `C@Dᵒ` | `summary.c_at_open_dataset_mb` | Paper counts per-client; we follow the same convention |
+| Table IV `C@50`, `C@75` | `summary.c_at_accuracy_packed_mb["0.50"/"0.75"]` | Use **packed** for paper-fair comparison; `wire` for real Flower cost |
+| Table IV `C@Top-Acc` | `summary.c_at_top_acc_packed_mb` | Same packed-vs-wire choice applies |
+| Table IV Top-Acc | `summary.top_acc` | Round where it first occurred → `summary.top_acc_round` |
+
+---
+
+### 14.7 Diagnostics we add beyond the paper
+
+These do not appear in Zhao et al.'s tables but are kept because they materially improve our final-report story:
+
+- `round_total_sec`, `server_vote_sec`, `avg_client_fit_sec`, `max_client_fit_sec`, `server_eval_sec` — wall-clock decomposition per round. Lets us defend the "SSFL is cheap in compute, not just bandwidth" angle.
+- `avg_confidence_threshold` — the mean of clients' median θ values. Monitors drift of the familiar/unfamiliar split across rounds; a sudden upward or downward trend signals classifier over-confidence.
+- `valid_global_labels` (per round) — how many of the `N_open` samples received any non-(-1) vote. Proxy for "how much of the open dataset is actually usable for distillation this round."
+- Per-class F1 / precision / recall / support vectors — see §14.1 rationale.
+- Wire vs. packed byte parity — auditable at every round because both are always logged.
 
 ---
 

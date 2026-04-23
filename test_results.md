@@ -6,6 +6,8 @@
 - **Total tests:** 117
 - **Warnings:** 5 (across 3 test(s), plus 0 orphan)
 
+> **Note (2026-04-23 post-metrics-refactor):** `utils.compute_metrics` is now a **facade** over `metrics.compute_classification_metrics` (see `SSFL_FLOWER_INFRASTRUCTURE_PLAN.md` §10.1, §14). The 3 existing `TestComputeMetrics` tests in `test_utils.py` remain valid under the facade because the legacy `confusion_matrix` shape (`np.ndarray`) is preserved. A new `test_metrics.py` file needs to land next to cover the §14 surface — see the bottom "Pending §14 test coverage" section.
+
 ## Summary by outcome
 
 | Badge | Outcome | Count |
@@ -355,3 +357,60 @@ Each row is one test function. The **Status** column is the final outcome; `[WAR
     - PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()` [runtest]
 - `test_data_preparation.py::TestLoadDeviceCsvs::test_loads_and_labels_every_row`
     - PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()` [runtest]
+
+---
+
+## Pending §14 test coverage — new `test_metrics.py`
+
+The new `metrics.py` module (§14 of the infrastructure plan) adds live math that is not yet covered by pytest. Ad-hoc smoke testing has verified every code path on 2026-04-23 (see log in this session — `payload_bytes_wire`, `payload_bytes_packed`, `open_dataset_distribution_bytes`, `fl_baseline_upload_bytes`, `bytes_to_mb`, `CommCostLedger.record / cumulative_bytes_at / cumulative_mb_at / cumulative_series / to_dict`, `extract_top_acc`, `extract_comm_cost_at_accuracy`, `extract_comm_cost_at_top_acc`, `extract_accuracy_snapshots`, `build_summary_report`, `save_metrics_json / save_metrics_csv / save_summary_json / save_confusion_matrix_json` all pass), but the following pytest tests still need to be written before the next CI pass:
+
+### Payload sizing (classification-metric math can share tests with `test_utils.py::TestComputeMetrics`)
+- `test_payload_bytes_wire_matches_nbytes` — for a range of dtypes and shapes
+- `test_payload_bytes_packed_is_size_times_one`
+- `test_open_dataset_distribution_bytes_product_of_three_ints`
+- `test_fl_baseline_upload_bytes_default_matches_config_estimate`
+- `test_bytes_to_mb_uses_decimal_mb`
+
+### CommCostLedger
+- `test_record_appends_entry_in_order`
+- `test_cumulative_bytes_at_wire_vs_packed`
+- `test_cumulative_mb_at_matches_bytes_to_mb`
+- `test_cumulative_series_length_matches_entries`
+- `test_non_monotonic_round_warns_but_still_records` (regression: we only log, not raise)
+- `test_to_dict_round_trip_is_json_serialisable`
+
+### Summary extractors
+- `test_extract_top_acc_returns_none_when_no_accuracy_key`
+- `test_extract_top_acc_picks_first_tie_winner`
+- `test_extract_comm_cost_at_accuracy_target_never_reached_returns_none`
+- `test_extract_comm_cost_at_accuracy_uses_first_crossing`
+- `test_extract_comm_cost_at_top_acc_matches_cumulative_at_top_round`
+- `test_extract_accuracy_snapshots_missing_round_is_none`
+- `test_build_summary_report_contains_all_expected_keys`
+- `test_build_summary_report_target_accs_stringified_with_two_decimals`
+
+### I/O helpers
+- `test_save_metrics_json_round_trips`
+- `test_save_metrics_csv_has_round_first_column`
+- `test_save_metrics_csv_drops_list_and_confusion_matrix_fields`
+- `test_save_summary_json_is_json_loadable`
+- `test_save_confusion_matrix_json_preserves_per_class_lists`
+
+### Strategy instrumentation (in `test_strategy.py`, extending `TestAggregateFit`)
+- `test_aggregate_fit_records_comm_cost_ledger_entry_per_round`
+- `test_aggregate_fit_charges_open_dataset_only_on_round_1_by_default`
+- `test_aggregate_fit_cumulative_mb_wire_is_monotonic_non_decreasing`
+- `test_aggregate_fit_broadcast_fanout_is_bytes_times_num_results`
+- `test_aggregate_fit_avg_confidence_threshold_is_mean_of_client_thresholds`
+- `test_aggregate_fit_wall_clock_fields_are_floats`
+
+### Client instrumentation (in `test_client.py`, extending `TestRunDistillationShortCircuit` / adding `TestFitMetricsPayload`)
+- `test_fit_metrics_include_bytes_upload_wire_and_packed` — requires a mocked client where `filter_and_predict` returns a synthetic array
+- `test_fit_metrics_include_confidence_threshold_and_fit_wall_clock_sec`
+
+### Main / CLI
+- `test_parse_arguments_accepts_metrics_dir_and_logs_dir`
+- `test_parse_arguments_accepts_target_accs_and_snapshot_rounds`
+- `test_parse_float_tuple_and_parse_int_tuple_helpers`
+
+All of the above are **additive** — nothing in the existing 117-test suite needs to change beyond ensuring `TestComputeMetrics` still asserts the legacy `confusion_matrix: np.ndarray` shape (which it already does, via the `utils.compute_metrics` facade).
