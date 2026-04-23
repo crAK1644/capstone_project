@@ -3,8 +3,14 @@
 Fully implemented — no CNN dependency. The voting mechanism is the core
 server-side algorithm of SSFL and this module can be unit-tested in
 isolation.
+
+Instrumentation note (see SSFL_FLOWER_INFRASTRUCTURE_PLAN.md §14):
+`aggregate_fit` also maintains a `CommCostLedger` and (if `eval_fn` is
+provided) a per-round classification-metric snapshot so the final Table
+II / III / IV analogues can be produced without re-running training.
 """
 import logging
+import time
 from typing import Callable, Dict, List, Optional, Tuple
 
 from flwr.common import (
@@ -21,6 +27,15 @@ from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.strategy import Strategy
 import numpy as np
+
+import config
+from metrics import (
+    CommCostLedger,
+    RoundCommCost,
+    open_dataset_distribution_bytes,
+    payload_bytes_packed,
+    payload_bytes_wire,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +54,7 @@ class SSFLStrategy(Strategy):
         min_available_clients: int,
         eval_fn: Optional[Callable] = None,
         classifier_epochs: int = 5,
+        charge_open_dataset_round: int = 1,
     ) -> None:
         super().__init__()
         self.num_clients: int = num_clients
@@ -48,12 +64,15 @@ class SSFLStrategy(Strategy):
         self.min_available_clients: int = min_available_clients
         self.eval_fn: Optional[Callable] = eval_fn
         self.classifier_epochs: int = classifier_epochs
+        self.charge_open_dataset_round: int = charge_open_dataset_round
 
         # Initial global labels: all -1 (no consensus yet).
         self.global_labels: np.ndarray = np.full(
             (n_open_samples,), -1, dtype=np.int64
         )
         self.round_metrics: List[dict] = []
+        # Communication-cost accumulator (see metrics.CommCostLedger).
+        self.comm_cost_ledger: CommCostLedger = CommCostLedger()
 
     # ---------- 7.2 ----------
     def initialize_parameters(
@@ -90,6 +109,7 @@ class SSFLStrategy(Strategy):
         results: List[Tuple[ClientProxy, FitRes]],
         failures: List,
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
+        round_t0: float = time.perf_counter()
         if failures:
             logger.warning(
                 "[Round %d] %d client failure(s)", server_round, len(failures)
@@ -111,10 +131,12 @@ class SSFLStrategy(Strategy):
             all_client_labels.append(arrs[0].astype(np.int64))
             client_metrics.append(dict(fit_res.metrics))
 
+        vote_t0: float = time.perf_counter()
         new_global_labels: np.ndarray = self.vote_mechanism(all_client_labels)
+        vote_sec: float = time.perf_counter() - vote_t0
         self.global_labels = new_global_labels
 
-        # Aggregate client metrics
+        # ---- Aggregate client training metrics ----
         agg_metrics: Dict[str, Scalar] = {}
         for key in ("classifier_loss", "discriminator_loss", "distillation_loss"):
             vals: List[float] = [
@@ -130,8 +152,87 @@ class SSFLStrategy(Strategy):
         agg_metrics["valid_global_labels"] = int((new_global_labels != -1).sum())
         agg_metrics["round"] = int(server_round)
 
-        # Optional server-side evaluation (closure body is stubbed until CNN lands).
+        # Wall-clock diagnostics (pure-python, no CNN dependency).
+        fit_times: List[float] = [
+            float(m.get("fit_wall_clock_sec", 0.0))
+            for m in client_metrics
+            if "fit_wall_clock_sec" in m
+        ]
+        agg_metrics["avg_client_fit_sec"] = (
+            float(np.mean(fit_times)) if fit_times else 0.0
+        )
+        agg_metrics["max_client_fit_sec"] = (
+            float(np.max(fit_times)) if fit_times else 0.0
+        )
+        agg_metrics["server_vote_sec"] = float(vote_sec)
+
+        thresholds: List[float] = [
+            float(m.get("confidence_threshold", 0.0))
+            for m in client_metrics
+            if "confidence_threshold" in m
+        ]
+        agg_metrics["avg_confidence_threshold"] = (
+            float(np.mean(thresholds)) if thresholds else 0.0
+        )
+
+        # ---- Communication cost accounting (Table IV analogue) ----
+        uploaded_wire_total: int = sum(
+            int(m.get("bytes_upload_wire", 0)) for m in client_metrics
+        )
+        uploaded_packed_total: int = sum(
+            int(m.get("bytes_upload_packed", 0)) for m in client_metrics
+        )
+        # Server-to-client broadcast of global labels is fanned out to every
+        # participating client, so the on-wire broadcast cost is
+        # `bytes_per_labels_array × num_clients`.
+        broadcast_arr: np.ndarray = new_global_labels.astype(np.int64)
+        broadcast_wire_one: int = payload_bytes_wire(broadcast_arr)
+        broadcast_packed_one: int = payload_bytes_packed(broadcast_arr)
+        broadcast_wire_total: int = broadcast_wire_one * len(results)
+        broadcast_packed_total: int = broadcast_packed_one * len(results)
+
+        # Charge open-dataset distribution exactly once (default: round 1).
+        # `×num_clients` because the paper counts the fan-out across all
+        # recipients; pass `charge_open_dataset_round=0` at construction to
+        # disable this term entirely.
+        open_bytes_this_round: int = 0
+        if server_round == self.charge_open_dataset_round:
+            open_bytes_this_round = (
+                open_dataset_distribution_bytes(self.n_open_samples)
+                * self.num_clients
+            )
+
+        self.comm_cost_ledger.record(
+            RoundCommCost(
+                round=int(server_round),
+                uploaded_bytes_wire=int(uploaded_wire_total),
+                uploaded_bytes_packed=int(uploaded_packed_total),
+                downloaded_bytes_wire=int(broadcast_wire_total),
+                downloaded_bytes_packed=int(broadcast_packed_total),
+                open_dataset_bytes=int(open_bytes_this_round),
+            )
+        )
+        agg_metrics["bytes_upload_wire_total"] = int(uploaded_wire_total)
+        agg_metrics["bytes_upload_packed_total"] = int(uploaded_packed_total)
+        agg_metrics["bytes_broadcast_wire_total"] = int(broadcast_wire_total)
+        agg_metrics["bytes_broadcast_packed_total"] = int(broadcast_packed_total)
+        agg_metrics["bytes_open_dataset_this_round"] = int(open_bytes_this_round)
+        agg_metrics["cumulative_mb_wire"] = float(
+            self.comm_cost_ledger.cumulative_mb_at(
+                int(server_round), packed=False
+            )
+        )
+        agg_metrics["cumulative_mb_packed"] = float(
+            self.comm_cost_ledger.cumulative_mb_at(
+                int(server_round), packed=True
+            )
+        )
+
+        # ---- Optional server-side evaluation (eval_fn is stubbed until CNN lands) ----
+        # Signature: eval_fn(round, global_labels, X_open_or_None) -> dict with
+        # accuracy, f1_*, precision_*, recall_*, confusion_matrix, per-class lists.
         if self.eval_fn is not None:
+            eval_t0: float = time.perf_counter()
             try:
                 eval_result = self.eval_fn(
                     int(server_round), new_global_labels, None
@@ -146,14 +247,20 @@ class SSFLStrategy(Strategy):
                 )
             except Exception as e:  # pragma: no cover
                 logger.warning("[Round %d] server eval failed: %s", server_round, e)
+            agg_metrics["server_eval_sec"] = float(time.perf_counter() - eval_t0)
+
+        agg_metrics["round_total_sec"] = float(time.perf_counter() - round_t0)
 
         self.round_metrics.append(dict(agg_metrics))
         logger.info(
-            "[Round %d] aggregated: valid_global=%d familiar=%d unfamiliar=%d",
+            "[Round %d] aggregated: valid_global=%d familiar=%d unfamiliar=%d "
+            "upload=%.4f MB cum=%.3f MB",
             server_round,
             agg_metrics["valid_global_labels"],
             agg_metrics["total_familiar"],
             agg_metrics["total_unfamiliar"],
+            float(uploaded_wire_total) / 1_000_000.0,
+            agg_metrics["cumulative_mb_wire"],
         )
         return (
             ndarrays_to_parameters([self.global_labels.copy()]),

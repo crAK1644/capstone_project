@@ -44,6 +44,41 @@ DATA_DIR: str = "data"
 RAW_DIR: str = os.path.join(DATA_DIR, "raw")
 PROCESSED_DIR: str = os.path.join(DATA_DIR, "processed")
 PARTITION_DIR: str = os.path.join(DATA_DIR, "partitions")
+METRICS_DIR: str = "metrics"
+LOGS_DIR: str = "logs"
+
+# ---------- Evaluation protocol (see SSFL_FLOWER_INFRASTRUCTURE_PLAN.md §14) ----------
+# Paper Table III reports Top-1 accuracy at these rounds; we snapshot at the
+# same checkpoints so our results table mirrors Zhao et al. one-for-one.
+SNAPSHOT_ROUNDS: Tuple[int, ...] = (10, 50, 100, 150, 200)
+
+# Paper Table IV reports cumulative MB to reach these accuracies (C@x); the
+# metrics module walks round history to find the first crossing.
+TARGET_ACCURACIES: Tuple[float, ...] = (0.50, 0.75)
+
+# ---------- Byte-accounting for communication cost (§14.3) ----------
+# `_WIRE` values reflect what actually leaves the socket in our Flower
+# implementation; `_PAPER` values reflect the minimum-bit encoding Zhao et al.
+# use in their communication-overhead comparison (Table IV). We log both so
+# the team can pick whichever the final report needs.
+BYTES_PER_FLOAT32: int = 4
+BYTES_PER_INT64: int = 8
+BYTES_PER_HARD_LABEL_WIRE: int = 8   # numpy default int64 over gRPC
+BYTES_PER_HARD_LABEL_PAPER: int = 1  # uint8 packed (4 bits would suffice for 12 values)
+BYTES_PER_OPEN_SAMPLE_FP32: int = N_FEATURES * BYTES_PER_FLOAT32  # 115 * 4 = 460
+BYTES_PER_OPEN_SAMPLE_UINT8: int = N_FEATURES                     # paper-fair quantized baseline
+
+# Estimate for the FL baseline (parameter-averaging) upload size per client.
+# Computed from the 8-layer CNN in §5.1. Used by metrics.py when the CNN is
+# still stubbed so we can still print "what FL *would* have cost" in reports.
+# The live value should be recomputed from `sum(p.numel() for p in classifier.parameters())`
+# once model.py ships.
+ESTIMATED_CNN_PARAM_COUNT: int = 300_000  # conservative rounded estimate for 8-conv + 2-FC net
+
+# ---------- Evaluation model settings ----------
+# Epochs the server-side eval_fn uses when training a fresh CNN on
+# (X_open[valid], global_labels[valid]) before scoring on X_test.
+SERVER_EVAL_EPOCHS: int = 10
 
 # ---------- Class name -> global ID lookup ----------
 # Authoritative mapping from traffic-category filename stem to global integer

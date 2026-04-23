@@ -26,6 +26,7 @@
 11. [Key Data Structures Reference](#11-key-data-structures-reference)
 12. [Full Training Round Flow](#12-full-training-round-flow)
 13. [Flower Communication Contract](#13-flower-communication-contract)
+14. [Metrics & Evaluation Protocol](#14-metrics--evaluation-protocol)
 
 ---
 
@@ -778,7 +779,7 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
   - `'classifier_epochs'` (int): Optionally override local epoch count.
 
 **Returns:** `Tuple[List[np.ndarray], int, dict]`
-- First element: `List[np.ndarray]` — The client's hard label predictions on open data (output of `filter_and_predict()`). This is what Flower carries to the server for aggregation.
+- First element: `List[np.ndarray]` — The client's hard label predictions on open data (output of `filter_and_predict()`). Cast to `int64` before transmission. This is what Flower carries to the server for aggregation.
 - Second element: `int` — Number of training samples used (set to `N_private` for weighting purposes, though the server doesn't use weights in our voting strategy).
 - Third element: `dict` — Metrics dictionary for the round. Contains:
   - `'classifier_loss'` (float): Average classifier training loss.
@@ -787,6 +788,10 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
   - `'n_familiar'` (int): Number of open samples classified as familiar.
   - `'n_unfamiliar'` (int): Number of open samples classified as unfamiliar.
   - `'client_id'` (int): This client's ID.
+  - `'bytes_upload_wire'` (int): **§14 instrumentation.** Actual on-the-wire upload cost of this client's hard-label payload (`hard_labels_int64.nbytes`). Sums to the paper's `C@Dᵒ`-equivalent row once multiplied across clients and rounds.
+  - `'bytes_upload_packed'` (int): Paper-fair upload cost (`N_open × 1 byte`), matching Zhao et al.'s uint8-packed accounting in their Table IV.
+  - `'confidence_threshold'` (float): The adaptive median threshold θ used this round; averaged across clients by the strategy to produce `avg_confidence_threshold` (useful for diagnosing drift in the familiar/unfamiliar split).
+  - `'fit_wall_clock_sec'` (float): End-to-end time spent inside `fit()`. The server aggregates these into `avg_client_fit_sec` and `max_client_fit_sec` so we can quantify straggler effects.
 
 **Internal Variables:**
 - `self.current_round: int` — Incremented at the start.
@@ -837,9 +842,9 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 
 ### 7.1 Class: `SSFLStrategy(flwr.server.strategy.Strategy)`
 
-**Constructor: `__init__(self, num_clients, num_classes, n_open_samples, min_fit_clients, min_available_clients, eval_fn)`**
+**Constructor: `__init__(self, num_clients, num_classes, n_open_samples, min_fit_clients, min_available_clients, eval_fn, classifier_epochs=5, charge_open_dataset_round=1)`**
 
-**Purpose:** Initializes the strategy with voting configuration and server-side state. Sets up storage for tracking global labels and per-round metrics.
+**Purpose:** Initializes the strategy with voting configuration and server-side state. Sets up storage for tracking global labels, per-round metrics, and a `CommCostLedger` (§14.3) that records uploaded / broadcast / open-dataset bytes on every call to `aggregate_fit`.
 
 **Parameters:**
 - `num_clients: int` — Total number of clients (27 for Scenario 1). Used to configure minimum participation.
@@ -847,7 +852,9 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 - `n_open_samples: int` — Total number of open dataset samples (`N_open`). Used to allocate the global labels array.
 - `min_fit_clients: int` — Minimum number of clients that must participate in each round. Set equal to `num_clients` (all clients must participate).
 - `min_available_clients: int` — Minimum number of clients that must be available before a round starts. Set equal to `num_clients`.
-- `eval_fn: Callable` — Optional function called after each round to evaluate the server-side global model on the test set. Signature: `eval_fn(round_num: int, global_labels: np.ndarray, X_open: np.ndarray) -> dict`. Requires `X_open` so the server-side model can be (re-)trained on the open samples whose global labels just passed voting, then evaluated on the held-out test set.
+- `eval_fn: Callable` — Optional function called after each round to evaluate the server-side global model on the test set. Signature: `eval_fn(round_num: int, global_labels: np.ndarray, X_open: np.ndarray) -> dict`. Expected return keys listed in §8.1 — they populate `server_eval_*` fields in `round_metrics`.
+- `classifier_epochs: int` — Number of classifier epochs to request from clients in every round's `FitIns` config payload. Defaults to `config.CLASSIFIER_EPOCHS`.
+- `charge_open_dataset_round: int` — The round at which the one-shot `C@Dᵒ` cost is charged in the ledger (default `1`). Set to `0` to disable this term if you want to exclude distribution from cumulative MB totals (useful for within-training comparison).
 
 **Internal Attributes:**
 - `self.num_clients: int` — Stored total client count.
@@ -856,8 +863,11 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 - `self.min_fit_clients: int` — Stored minimum fit participation.
 - `self.min_available_clients: int` — Stored minimum availability.
 - `self.eval_fn: Callable` — Stored evaluation function.
+- `self.classifier_epochs: int` — Stored classifier-epoch count passed to each FitIns config.
+- `self.charge_open_dataset_round: int` — Stored one-shot charging round.
 - `self.global_labels: np.ndarray` — The current global label array of shape `(N_open,)`. Initialized to all `-1` (no labels known yet). Updated by `vote_mechanism()` after each round.
-- `self.round_metrics: List[dict]` — Accumulates per-round metric summaries for logging and later analysis. Initially empty.
+- `self.round_metrics: List[dict]` — Accumulates per-round metric summaries for logging and later analysis. Initially empty. Serialized as `metrics/per_round.json` and flattened into `per_round.csv` on server shutdown.
+- `self.comm_cost_ledger: CommCostLedger` — Running accumulator of per-round byte counts (see §14.3). Queried by `metrics.build_summary_report` to compute `C@50`, `C@75`, and `C@Top-Acc`.
 
 ---
 
@@ -915,7 +925,21 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 - `new_global_labels: np.ndarray` — Result of `self.vote_mechanism(all_client_labels)`.
 - `agg_metrics: dict` — Aggregated summary metrics for this round (average losses, total familiar samples, etc.).
 
-**Side effects:** Updates `self.global_labels` with the voted result. Appends to `self.round_metrics`.
+**§14 round_metrics schema (aggregated keys written to `self.round_metrics`):**
+- `round`, `valid_global_labels`, `total_familiar`, `total_unfamiliar`.
+- `avg_classifier_loss`, `avg_discriminator_loss`, `avg_distillation_loss` — means over participating clients.
+- `avg_client_fit_sec`, `max_client_fit_sec` — wall-clock diagnostics; spotlight stragglers.
+- `server_vote_sec` — time spent inside `vote_mechanism` (pure numpy; small but tracked for big-N scaling studies).
+- `server_eval_sec` — time spent inside the optional `eval_fn`.
+- `round_total_sec` — full `aggregate_fit` wall-clock.
+- `avg_confidence_threshold` — averaged median-θ across clients.
+- `bytes_upload_wire_total`, `bytes_upload_packed_total` — summed across clients this round.
+- `bytes_broadcast_wire_total`, `bytes_broadcast_packed_total` — one global-label array × `len(results)` (fan-out).
+- `bytes_open_dataset_this_round` — non-zero only at `charge_open_dataset_round` (default 1); equals `N_open × N_features × 4 × num_clients` in wire mode.
+- `cumulative_mb_wire`, `cumulative_mb_packed` — running totals via `self.comm_cost_ledger.cumulative_mb_at(round)`.
+- `server_eval_*` — every key returned by `eval_fn` is prefixed `server_eval_` and merged in (e.g. `server_eval_accuracy`, `server_eval_f1_macro`, `server_eval_confusion_matrix`, per-class lists). Absent when the closure is stubbed.
+
+**Side effects:** Updates `self.global_labels` with the voted result. Appends one entry to `self.round_metrics`. Appends one `RoundCommCost` entry to `self.comm_cost_ledger`.
 
 ---
 
@@ -988,25 +1012,38 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 
 ---
 
-### 8.1 `build_eval_fn(X_test: np.ndarray, y_test: np.ndarray, num_classes: int, device: torch.device) -> Callable`
+### 8.1 `build_eval_fn(X_test: np.ndarray, y_test: np.ndarray, num_classes: int, device: torch.device, server_eval_epochs: int = config.SERVER_EVAL_EPOCHS) -> Callable`
 
-**Purpose:** Creates a closure (a function-returning-function) that the strategy can call after each round to evaluate a server-side global model on the held-out test set. The global model is re-trained using current global labels.
+**Purpose:** Creates a closure (a function-returning-function) that the strategy can call after each round to evaluate a server-side global model on the held-out test set. The global model is re-trained from scratch using the current voted labels on the open dataset.
 
 **Parameters:**
 - `X_test: np.ndarray` — Test feature array, shape `(N_test, 23, 5)`.
 - `y_test: np.ndarray` — Test label array, shape `(N_test,)`.
 - `num_classes: int` — Number of traffic classes.
 - `device: torch.device` — Compute device.
+- `server_eval_epochs: int` — Epochs used when re-training the temporary server classifier on `(X_open[valid], global_labels[valid])`. Default `config.SERVER_EVAL_EPOCHS == 10`.
 
-**Returns:** `Callable` — A function with signature `eval_fn(server_round, global_labels, X_open) -> dict` that trains a temporary server model on globally labeled open data and evaluates on the test set.
+**Returns:** `Callable` — A function with signature `eval_fn(server_round, global_labels, X_open) -> dict`.
 
-**Internal Variables inside the returned closure:**
-- `server_model: TrafficCNN` — A server-side classifier that is trained using the global labels and open data to simulate the server's knowledge.
-- `test_loader: DataLoader` — DataLoader for `(X_test, y_test)`.
-- `correct: int` — Count of correct predictions on test set.
-- `accuracy: float` — Test accuracy.
-- `f1: float` — Macro F1 score computed using `sklearn.metrics.f1_score`.
-- `precision: float` — Macro precision computed using `sklearn.metrics.precision_score`.
+**Expected return schema (what each call produces — mirrors `metrics.compute_classification_metrics` exactly, so every key passes through the strategy prefixed with `server_eval_`):**
+- `accuracy: float`
+- `f1_macro: float`, `f1_weighted: float`
+- `precision_macro: float`, `precision_weighted: float`
+- `recall_macro: float`, `recall_weighted: float`
+- `f1_per_class: List[float]` (length `num_classes`)
+- `precision_per_class: List[float]`, `recall_per_class: List[float]`, `support_per_class: List[int]`
+- `confusion_matrix: List[List[int]]` — `num_classes × num_classes`; consumed by `save_confusion_matrix_json` at shutdown to produce Fig. 3.
+- `class_names: List[str]` — Human-readable class labels aligned with `config.GLOBAL_ID_TO_CLASS_NAME`.
+
+**Internal Variables inside the returned closure (post-CNN implementation):**
+- `valid_mask: np.ndarray` — `global_labels != -1`; the subset of open samples with a voted consensus.
+- `server_model: TrafficCNN` — Fresh classifier (no carry-over between rounds, per paper §II-B).
+- `train_loader: DataLoader` — For `(X_open[valid_mask], global_labels[valid_mask])`.
+- `test_loader: DataLoader` — For `(X_test, y_test)`, no shuffle.
+- `y_pred: np.ndarray` — Argmax of classifier logits on `X_test`.
+- Return is `compute_classification_metrics(y_test, y_pred, num_classes)`.
+
+**Stub behavior:** Raises `NotImplementedError` until `model.py` ships. The strategy catches this specifically, logs at DEBUG, and continues — so pre-CNN runs exercise voting + comm-cost accounting end-to-end but emit empty `server_eval_*` fields.
 
 ---
 
@@ -1128,63 +1165,59 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 
 ## 10. Module: `utils.py`
 
-**Purpose:** Shared helper utilities used across multiple modules — metrics computation, file I/O helpers, logging, and progress tracking.
+**Purpose:** Shared helper utilities used across multiple modules — thin I/O wrappers, logging setup, feature-name lookup, and a backward-compatible `compute_metrics` **facade** over the new `metrics.py` (see §14). All authoritative classification math and communication-cost accounting have moved to `metrics.py`; `utils.py` is only the side-effect layer.
 
 ---
 
-### 10.1 `compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int) -> dict`
+### 10.1 `compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int) -> dict` *(facade)*
 
-**Purpose:** Computes all evaluation metrics used in the paper: accuracy, macro F1 score, macro precision, and macro recall. Also computes per-class accuracy for confusion matrix analysis.
+**Purpose:** Backward-compatible facade over `metrics.compute_classification_metrics` (§14.1). Exists solely so older call sites and unit tests that imported `utils.compute_metrics` keep working; new code should import from `metrics` directly.
 
 **Parameters:**
 - `y_true: np.ndarray` — Ground truth integer class labels.
 - `y_pred: np.ndarray` — Predicted integer class labels.
 - `num_classes: int` — Total number of classes.
 
-**Returns:** `dict` with keys:
-- `'accuracy'`: float — Overall accuracy.
-- `'f1_macro'`: float — Macro-averaged F1 score.
-- `'precision_macro'`: float — Macro-averaged precision.
-- `'recall_macro'`: float — Macro-averaged recall.
-- `'confusion_matrix'`: np.ndarray — Shape `(num_classes, num_classes)`.
+**Returns:** `dict` — same schema as `metrics.compute_classification_metrics`, **except** `'confusion_matrix'` is converted back to an `np.ndarray` (shape `(num_classes, num_classes)`) rather than a list-of-lists. This preserves the legacy contract. All richer keys (`f1_weighted`, per-class lists, `class_names`) flow through unchanged.
 
-**Internal Variables:**
-- `from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix` — Imported metrics functions.
-- `acc: float` — `accuracy_score(y_true, y_pred)`.
-- `f1: float` — `f1_score(y_true, y_pred, average='macro', zero_division=0)`.
-- `prec: float` — `precision_score(y_true, y_pred, average='macro', zero_division=0)`.
-- `rec: float` — `recall_score(y_true, y_pred, average='macro', zero_division=0)`.
-- `cm: np.ndarray` — `confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))`.
+**Internal:**
+- Delegates to `metrics.compute_classification_metrics(y_true, y_pred, num_classes)`; converts the list-of-lists confusion matrix to `np.asarray(..., dtype=np.int64)` before returning.
 
 ---
 
 ### 10.2 `save_round_metrics(round_num: int, metrics: dict, output_path: str) -> None`
 
-**Purpose:** Appends per-round metrics to a JSON log file on disk. Allows tracking training progress across all rounds without keeping everything in memory.
+**Purpose:** Appends per-round metrics to a JSON log file on disk. Used by the strategy as an optional "live" writer during long runs so a crash doesn't lose intermediate data.
 
 **Parameters:**
 - `round_num: int` — The communication round number.
-- `metrics: dict` — Metrics dict for this round.
+- `metrics: dict` — Metrics dict for this round (may contain numpy scalars/arrays; these are sanitized by `_json_safe`).
 - `output_path: str` — Path to the JSON log file (appended to, not overwritten).
 
 **Returns:** `None`.
 
-**Internal Variables:**
-- `entry: dict` — `{'round': round_num, **metrics}`.
-- `existing_data: List[dict]` — Loaded from `output_path` if it exists, else empty list.
+**Note:** The canonical end-of-run dumps live in `metrics.save_metrics_json` / `save_metrics_csv` / `save_summary_json` (§14.5). `save_round_metrics` is the *streaming* variant for progress tracking.
 
 ---
 
 ### 10.3 `get_feature_column_names() -> List[str]`
 
-**Purpose:** Returns the canonical list of 115 feature column names for the N-BaIoT dataset. Used as a shared reference when loading and processing DataFrames.
+**Purpose:** Thin accessor that returns `config.FEATURE_COLUMN_NAMES`. Centralising this lookup in `utils` keeps the call-site API stable even when `config`'s internals change.
 
 **Parameters:** None.
 
-**Returns:** `List[str]` — List of 115 strings naming each feature column.
+**Returns:** `List[str]` — The 115 N-BaIoT feature column names, ordered so flat index `j*23 + k` maps to (feature k, time window j) after `reshape_sample_to_2d`.
 
-**Internal Variables:**
-- Feature names are constructed programmatically from the 5 time windows and the known N-BaIoT feature naming convention (e.g., `'MI_dir_L0.1_weight'`, `'MI_dir_L0.5_mean'`, etc.).
+---
+
+### 10.4 `setup_logging(level: int = logging.INFO) -> None`
+
+**Purpose:** Configures the root logger with a consistent timestamped format across the server process and all 27 client processes, so parsing aggregated logs is trivial.
+
+**Parameters:**
+- `level: int` — Python logging level (default `logging.INFO`).
+
+**Returns:** `None`.
 
 ---
 
@@ -1215,9 +1248,25 @@ x → conv_block1 → conv_block2 → conv_block3 → conv_block4
 - `RANDOM_SEED: int` — `42`.
 - `DEFAULT_SERVER_ADDRESS: str` — `"127.0.0.1:8080"`.
 - `DATA_DIR: str`, `RAW_DIR: str`, `PROCESSED_DIR: str`, `PARTITION_DIR: str` — Canonical subfolders derived from `DATA_DIR`.
+- `METRICS_DIR: str` — `"metrics"`. Where `per_round.{json,csv}`, `summary.json`, and `confusion_matrix_final.json` are written (see §14.5).
+- `LOGS_DIR: str` — `"logs"`. Where the Flower-native `history.json` lands.
 - `FEATURE_COLUMN_NAMES: List[str]` — The 115 N-BaIoT feature column names, returned by `utils.get_feature_column_names()`. Stored here so every module sees the same ordering.
 - `CLASS_NAME_TO_GLOBAL_ID: Dict[str, int]` — Lookup from traffic-category filename stem (e.g., `"benign"`, `"mirai_udp"`, `"gafgyt_combo"`) to its **global** integer label in 0..10. This is the authority that `data_preparation.load_device_csvs` consults when labeling rows, and it is what guarantees that a client never has to know which classes its device is missing — it just never emits labels for them.
 - `GLOBAL_ID_TO_CLASS_NAME: Dict[int, str]` — Inverse of the above, used only for logging and confusion-matrix pretty-printing.
+
+**Evaluation-protocol constants (§14):**
+- `SNAPSHOT_ROUNDS: Tuple[int, ...]` — `(10, 50, 100, 150, 200)`. Rounds at which Top-1 accuracy is snapshotted to mirror Zhao et al. Table III.
+- `TARGET_ACCURACIES: Tuple[float, ...]` — `(0.50, 0.75)`. Accuracy thresholds used to populate the C@50 / C@75 columns of our Table IV analogue.
+- `SERVER_EVAL_EPOCHS: int` — `10`. Epochs the server-side `eval_fn` uses when re-training a fresh classifier on `(X_open[valid], global_labels[valid])` before scoring on the held-out test set.
+
+**Byte-accounting constants (§14.2):**
+- `BYTES_PER_FLOAT32: int` — `4`.
+- `BYTES_PER_INT64: int` — `8`.
+- `BYTES_PER_HARD_LABEL_WIRE: int` — `8`. What a single hard label actually costs on the wire when serialized as numpy `int64` through Flower/gRPC.
+- `BYTES_PER_HARD_LABEL_PAPER: int` — `1`. Paper-fair accounting (`uint8`); 4 bits would suffice for 12 label values but byte-alignment is the standard comparator.
+- `BYTES_PER_OPEN_SAMPLE_FP32: int` — `N_FEATURES * 4 == 460`. Size of a single open-dataset sample in the `float32` representation that's distributed server→client once.
+- `BYTES_PER_OPEN_SAMPLE_UINT8: int` — `N_FEATURES == 115`. Paper-fair quantized baseline.
+- `ESTIMATED_CNN_PARAM_COUNT: int` — `300_000`. Conservative estimate for the 8-conv + 2-FC classifier; used by `metrics.fl_baseline_upload_bytes` to produce the "FL" row in Table IV **before** `model.py` ships. Once it ships, the live value should be recomputed from `sum(p.numel() for p in classifier.parameters())`.
 
 **No logic lives here.** If a calculation is needed (e.g., "how many shards per device"), it is computed in the module that uses it, consuming these constants as inputs.
 

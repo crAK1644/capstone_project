@@ -1,4 +1,11 @@
-"""Shared helper utilities — metrics, logging, file I/O."""
+"""Shared helper utilities — logging, generic file I/O, and a thin backward-
+compatible `compute_metrics` wrapper over `metrics.compute_classification_metrics`.
+
+The authoritative classification math lives in `metrics.py`. This module's
+job is only the *side-effect* stuff — logging setup, JSON persistence, the
+feature-name lookup — so that `metrics.py` stays a pure, testable
+compute-only module.
+"""
 import json
 import logging
 import os
@@ -12,33 +19,27 @@ import config
 def compute_metrics(
     y_true: np.ndarray, y_pred: np.ndarray, num_classes: int
 ) -> dict:
-    """Compute accuracy, macro F1, macro precision, macro recall, confusion matrix."""
-    from sklearn.metrics import (
-        accuracy_score,
-        confusion_matrix,
-        f1_score,
-        precision_score,
-        recall_score,
-    )
+    """Backward-compatible facade over `metrics.compute_classification_metrics`.
 
-    acc: float = float(accuracy_score(y_true, y_pred))
-    f1: float = float(f1_score(y_true, y_pred, average="macro", zero_division=0))
-    prec: float = float(
-        precision_score(y_true, y_pred, average="macro", zero_division=0)
+    Returns the same keys as before (`accuracy`, `f1_macro`, `precision_macro`,
+    `recall_macro`, `confusion_matrix`) so older tests / call sites don't
+    break, but also forwards the richer keys (`f1_weighted`, `f1_per_class`,
+    per-class precision/recall/support, `class_names`) that our Table II
+    analogue needs. The confusion matrix field matches the legacy shape
+    (numpy array) for backward compatibility.
+
+    Prefer calling `metrics.compute_classification_metrics` directly in
+    new code; this wrapper exists only so existing call sites keep working.
+    """
+    from metrics import compute_classification_metrics
+
+    result: dict = compute_classification_metrics(y_true, y_pred, num_classes)
+    # Legacy shape: confusion matrix as np.ndarray, not list-of-lists.
+    cm_list = result.get("confusion_matrix")
+    result["confusion_matrix"] = (
+        np.asarray(cm_list, dtype=np.int64) if cm_list is not None else None
     )
-    rec: float = float(
-        recall_score(y_true, y_pred, average="macro", zero_division=0)
-    )
-    cm: np.ndarray = confusion_matrix(
-        y_true, y_pred, labels=list(range(num_classes))
-    )
-    return {
-        "accuracy": acc,
-        "f1_macro": f1,
-        "precision_macro": prec,
-        "recall_macro": rec,
-        "confusion_matrix": cm,
-    }
+    return result
 
 
 def _json_safe(value):
