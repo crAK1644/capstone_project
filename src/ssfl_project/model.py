@@ -13,84 +13,46 @@ import torch.nn as nn
 
 
 class TrafficCNN(nn.Module):
-    """CNN used as classifier (num_classes=11) or discriminator (num_classes=2).
-
-    Input  shape : (batch, 23, 5)        # 23 channels, length-5 sequence
-    Output shape : (batch, num_classes)  # raw logits (no softmax)
-    """
-
     def __init__(self, num_classes: int) -> None:
         super().__init__()
-        self.num_classes: int = num_classes
-
-        # ----- Blocks 1-4: 64 channels (padding=1 keeps length=5) -----
+        # Filtre sayılarını 64'ten 32'ye çekiyoruz
         self.conv_block1 = nn.Sequential(
-            nn.Conv1d(in_channels=23, out_channels=64, kernel_size=3, padding=1),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(in_channels=23, out_channels=32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
         )
         self.conv_block2 = nn.Sequential(
-            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3, padding=1),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(in_channels=32, out_channels=32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
         )
         self.conv_block3 = nn.Sequential(
-            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3, padding=1),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(in_channels=32, out_channels=32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
         )
         self.conv_block4 = nn.Sequential(
-            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3, padding=1),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(in_channels=32, out_channels=32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
             nn.ReLU(),
         )
 
-        # ----- Block 5 upgrades width 64 -> 128 -----
-        self.conv_block5 = nn.Sequential(
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-        )
-        # ----- Blocks 6-8: 128 channels -----
-        self.conv_block6 = nn.Sequential(
-            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-        )
-        self.conv_block7 = nn.Sequential(
-            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-        )
-        self.conv_block8 = nn.Sequential(
-            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-        )
-
-        # ----- Head: (batch,128,5) -> (batch,640) -> 128 -> num_classes -----
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(in_features=640, out_features=128)
+        # Giriş: 32 kanal * 5 zaman adımı = 160
+        self.fc1 = nn.Linear(in_features=160, out_features=64) # Nöron sayısını da 128'den 64'e düşürdük
         self.fc1_relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.5)
-        self.fc2 = nn.Linear(in_features=128, out_features=num_classes)
+        self.fc2 = nn.Linear(in_features=64, out_features=num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.conv_block1(x)
         out = self.conv_block2(out)
         out = self.conv_block3(out)
         out = self.conv_block4(out)
-        out = self.conv_block5(out)
-        out = self.conv_block6(out)
-        out = self.conv_block7(out)
-        out = self.conv_block8(out)
         out = self.flatten(out)
         out = self.fc1(out)
         out = self.fc1_relu(out)
-        out = self.dropout(out)
         out = self.fc2(out)
         return out
-
 
 def build_classifier(num_classes: int, device: torch.device) -> TrafficCNN:
     """Factory for the classifier (output size = num_classes, e.g. 11)."""

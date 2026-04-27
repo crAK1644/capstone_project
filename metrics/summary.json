@@ -1,0 +1,111 @@
+{
+  "top_acc": 0.0,
+  "top_acc_round": null,
+  "c_at_top_acc_wire_mb": null,
+  "c_at_top_acc_packed_mb": null,
+  "c_at_open_dataset_bytes": 20470000,
+  "c_at_open_dataset_mb": 20.47,
+  "accuracy_snapshots": {
+    "10": null,
+    "50": null,
+    "100": null,
+    "150": null,
+    "200": null
+  },
+  "c_at_accuracy_wire_mb": {
+    "0.50": null,
+    "0.75": null
+  },
+  "c_at_accuracy_packed_mb": {
+    "0.50": null,
+    "0.75": null
+  },
+  "final_round_cumulative_wire_mb": 27.59,
+  "final_round_cumulative_packed_mb": 21.36,
+  "comm_cost_ledger": {
+    "entries": [
+      {
+        "round": 1,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 20470000
+      },
+      {
+        "round": 2,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 3,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 4,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 5,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 6,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 7,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 8,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 9,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      },
+      {
+        "round": 10,
+        "uploaded_bytes_wire": 356000,
+        "uploaded_bytes_packed": 44500,
+        "downloaded_bytes_wire": 356000,
+        "downloaded_bytes_packed": 44500,
+        "open_dataset_bytes": 0
+      }
+    ],
+    "cumulative_mb_wire": 27.59,
+    "cumulative_mb_packed": 21.36
+  }
+}

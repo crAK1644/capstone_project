@@ -272,7 +272,20 @@ def load_client_partition(
     client_id: int, partition_dir: str
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Load one client's private partition as (X_private, y_private) arrays."""
-    file_path: str = os.path.join(partition_dir, f"client_{client_id}_private.pkl")
+    file_path = os.path.join(partition_dir, f"client_{client_id}_private.pkl")
+    
+    # --- GÜVENLİ BYPASS VE BOYUT SIKIŞTIRMA ---
+    if not os.path.exists(file_path):
+        client_dir = os.path.join("prepared_data", "scenario_1", f"client_{client_id}")
+        opt_x = os.path.join(client_dir, "X_2d.npy")
+        opt_y = os.path.join(client_dir, "y.npy")
+        if os.path.exists(opt_x):
+            X = np.load(opt_x)
+            if X.ndim == 4:
+                X = np.squeeze(X, axis=1) # 4D -> 3D dönüşümü (100, 1, 23, 5 -> 100, 23, 5)
+            return X, np.load(opt_y)
+    # -----------------------------------------
+            
     with open(file_path, "rb") as f:
         client_df: pd.DataFrame = pickle.load(f)
     feature_cols: List[str] = get_feature_column_names()
@@ -282,7 +295,19 @@ def load_client_partition(
 # ---------- 4.11 ----------
 def load_open_data(partition_dir: str) -> np.ndarray:
     """Load the shared unlabeled open dataset as X_open of shape (N_open, 23, 5)."""
-    open_path: str = os.path.join(partition_dir, "open_data.pkl")
+    open_path = os.path.join(partition_dir, "open_data.pkl")
+    
+    # --- GÜVENLİ BYPASS VE BOYUT SIKIŞTIRMA ---
+    if not os.path.exists(open_path):
+        opt_x = os.path.join("prepared_data", "open", "X_2d.npy")
+        if os.path.exists(opt_x):
+            X = np.load(opt_x)
+            if X.ndim == 4:
+                X = np.squeeze(X, axis=1)
+            print("[Mimari] Ortak veri (Open) 3D formata sıkıştırılarak yüklendi.")
+            return X
+    # -----------------------------------------
+            
     with open(open_path, "rb") as f:
         open_df: pd.DataFrame = pickle.load(f)
     feature_cols: List[str] = get_feature_column_names()
@@ -292,7 +317,20 @@ def load_open_data(partition_dir: str) -> np.ndarray:
 
 def load_test_data(partition_dir: str) -> Tuple[np.ndarray, np.ndarray]:
     """Load the test dataset as (X_test, y_test) arrays."""
-    test_path: str = os.path.join(partition_dir, "test_data.pkl")
+    test_path = os.path.join(partition_dir, "test_data.pkl")
+    
+    # --- GÜVENLİ BYPASS VE BOYUT SIKIŞTIRMA ---
+    if not os.path.exists(test_path):  
+        opt_x = os.path.join("prepared_data", "test", "X_2d.npy")
+        opt_y = os.path.join("prepared_data", "test", "y.npy")
+        if os.path.exists(opt_x):
+            X = np.load(opt_x)
+            if X.ndim == 4:
+                X = np.squeeze(X, axis=1)
+            print("[Mimari] Test verisi 3D formata sıkıştırılarak yüklendi.")
+            return X, np.load(opt_y)
+    # -----------------------------------------
+            
     with open(test_path, "rb") as f:
         test_df: pd.DataFrame = pickle.load(f)
     feature_cols: List[str] = get_feature_column_names()

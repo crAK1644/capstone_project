@@ -1,0 +1,20 @@
+C:\Users\Computer\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\cuda\__init__.py:129: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 2: out of memory (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\builder\windows\pytorch\c10\cuda\CUDAFunctions.cpp:108.)
+  return torch._C._cuda_getDeviceCount() > 0
+Traceback (most recent call last):
+  File "C:\Users\Computer\capstone_project\src\ssfl_project\main.py", line 290, in <module>
+    main()
+  File "C:\Users\Computer\capstone_project\src\ssfl_project\main.py", line 286, in main
+    run_client(args)
+  File "C:\Users\Computer\capstone_project\src\ssfl_project\main.py", line 256, in run_client
+    X_open: np.ndarray = load_open_data(args.partition_dir)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Computer\capstone_project\src\ssfl_project\data_preparation.py", line 304, in load_open_data
+    X = np.load(opt_x)
+        ^^^^^^^^^^^^^^
+  File "C:\Users\Computer\AppData\Local\Programs\Python\Python312\Lib\site-packages\numpy\lib\_npyio_impl.py", line 483, in load
+    return format.read_array(fid, allow_pickle=allow_pickle,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Computer\AppData\Local\Programs\Python\Python312\Lib\site-packages\numpy\lib\_format_impl.py", line 847, in read_array
+    array = numpy.fromfile(fp, dtype=dtype, count=count)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 3.90 MiB for an array with shape (1023500,) and data type float32
