@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Generate an *inventory* Markdown report for the SSFL test suite.
 
-When `pytest` is installed, the preferred way to get a real `test_results.md`
-is simply:
+When `pytest` is installed, the preferred way to get a real
+`docs/test_results.md` is simply:
 
     cd capstone_project/
-    pytest test/
+    pytest tests/
 
 The conftest.py hook will then write a proper per-test table with pass/fail
 outcomes.
@@ -14,7 +14,7 @@ In environments where pytest (or its runtime dependencies like `torch` /
 `flwr` / `sklearn`) cannot be installed, this script is a non-executing
 fallback: it statically parses every `test_*.py` file, lists the test cases
 it finds, reports which dependencies are importable in the current
-interpreter, and writes `test_results.md` at the project root.
+interpreter, and writes `docs/test_results.md`.
 
 The resulting document answers three questions the student will want to see
 before committing:
@@ -35,7 +35,9 @@ from typing import Dict, List, Tuple
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
-OUT_PATH = PROJECT_ROOT / "test_results.md"
+DOCS_DIR = PROJECT_ROOT / "docs"
+DOCS_DIR.mkdir(parents=True, exist_ok=True)
+OUT_PATH = DOCS_DIR / "test_results.md"
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +179,10 @@ def main() -> int:
     lines.append("")
     lines.append("```bash")
     lines.append("cd capstone_project/")
-    lines.append("pytest test/")
+    lines.append("pytest tests/")
     lines.append("```")
     lines.append("")
-    lines.append("The `test/conftest.py` `pytest_sessionfinish` hook will overwrite this")
+    lines.append("The `tests/conftest.py` `pytest_sessionfinish` hook will overwrite this")
     lines.append("file with a proper per-test results table, summary counts, skipped-reason")
     lines.append("list, and failure tracebacks.")
     lines.append("")

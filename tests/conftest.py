@@ -11,7 +11,7 @@ Three responsibilities, in one place:
    tmp partition directory, access to the real `prepared_data/` files that the
    user re-added, and a couple of numpy helpers.
 3. Implement `pytest_sessionfinish`, which walks every test result collected this
-   session and writes a Markdown report at `<workspace>/test_results.md`.
+   session and writes a Markdown report at `<workspace>/docs/test_results.md`.
 
 The report hook is deliberately defensive: it reads from `terminalreporter.stats`
 (the canonical place pytest accumulates results per outcome) so it never touches
@@ -33,20 +33,24 @@ import pytest
 # ---------------------------------------------------------------------------
 # 1. Make `ssfl_project/` importable without packaging it.
 # ---------------------------------------------------------------------------
-# The source tree is:
+# The source tree (classic src-layout) is:
 #   capstone_project/
-#       ssfl_project/           <- flat module files, no __init__.py needed
-#       test/conftest.py        <- this file
+#       src/
+#           ssfl_project/       <- flat module files, no __init__.py needed
+#       tests/conftest.py       <- this file
+#       docs/                   <- markdown plan + generated test_results.md
+#       include/                <- shared interfaces / schema stubs
 #       prepared_data/
 #
 # Production code does `import config`, `import strategy`, etc. directly (no
 # `ssfl_project.` prefix), so we insert that folder at the front of sys.path.
 TEST_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = TEST_DIR.parent                 # capstone_project/
-SRC_DIR = PROJECT_ROOT / "ssfl_project"        # capstone_project/ssfl_project/
+PROJECT_ROOT = TEST_DIR.parent                              # capstone_project/
+SRC_DIR = PROJECT_ROOT / "src" / "ssfl_project"             # capstone_project/src/ssfl_project/
 PREPARED_DATA_DIR = PROJECT_ROOT / "prepared_data"
+DOCS_DIR = PROJECT_ROOT / "docs"
 
-for p in (str(SRC_DIR), str(PROJECT_ROOT)):
+for p in (str(SRC_DIR), str(PROJECT_ROOT / "src"), str(PROJECT_ROOT)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -360,7 +364,7 @@ def _short_reason(longrepr: str) -> str:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """Write `test_results.md` to the project root.
+    """Write `test_results.md` to `docs/`.
 
     The layout is:
       1. Metadata + summary-by-outcome counts.
@@ -390,7 +394,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         # -------------------------------------------------------------------
         # Header
         # -------------------------------------------------------------------
-        out_path = PROJECT_ROOT / "test_results.md"
+        DOCS_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = DOCS_DIR / "test_results.md"
         lines: List[str] = []
         lines.append("# SSFL Infrastructure — pytest Test Results")
         lines.append("")

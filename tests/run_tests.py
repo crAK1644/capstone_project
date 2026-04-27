@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Helper script to run the SSFL pytest suite and emit `test_results.md`.
+"""Helper script to run the SSFL pytest suite and emit `docs/test_results.md`.
 
 Why this file exists
 --------------------
 `pytest` is the canonical way to run the suite. The conftest.py installed in
-this folder already writes `test_results.md` at session end, so the normal
-usage is just:
+this folder already writes `docs/test_results.md` at session end, so the
+normal usage is just:
 
     cd capstone_project/
-    pytest test/
+    pytest tests/
 
 This helper adds three conveniences on top:
 
@@ -16,13 +16,13 @@ This helper adds three conveniences on top:
    warning spam) and captures its exit status.
 2. If pytest is missing, it prints a clear installation hint instead of a
    generic ImportError.
-3. It ensures the process's CWD is the project root, so `test_results.md`
-   lands next to `ssfl_project/` rather than inside `test/`.
+3. It ensures the process's CWD is the project root, so the conftest's
+   `DOCS_DIR / "test_results.md"` resolves to `<project_root>/docs/`.
 
 Usage:
-    python test/run_tests.py              # run full suite
-    python test/run_tests.py -k vote      # run tests whose name matches 'vote'
-    python test/run_tests.py --markers    # list registered markers
+    python tests/run_tests.py             # run full suite
+    python tests/run_tests.py -k vote     # run tests whose name matches 'vote'
+    python tests/run_tests.py --markers   # list registered markers
 """
 from __future__ import annotations
 
@@ -59,10 +59,10 @@ def main(argv: list[str]) -> int:
         print(_install_hint(), file=sys.stderr)
         return 2
 
-    # Make sure we run from the project root so test_results.md lands there.
+    # Make sure we run from the project root so docs/test_results.md lands there.
     os.chdir(PROJECT_ROOT)
 
-    cmd = [sys.executable, "-m", "pytest", "test", *argv]
+    cmd = [sys.executable, "-m", "pytest", "tests", *argv]
     print(f"[run_tests] {' '.join(cmd)}")
     return subprocess.run(cmd, check=False).returncode
 
